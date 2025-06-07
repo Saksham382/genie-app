@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Genie - Enhanced Coin Rain, Dark Theme, Precise Eye Movement</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; }
+        canvas { display: block; cursor: none; }
+        .cursor-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #ff4500;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 1000;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <div class="cursor-dot"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script>
+        // --- Setup core 3D scene ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // --- Starry, foggy background ---
+        const skyboxTexture = new THREE.CubeTextureLoader()
+            .setPath('https://threejs.org/examples/textures/cube/pisa/')
+            .load(['px.png', 'nx.png', 'py.png', 'ny.png', 'pz.png', 'nz.png']);
+        scene.background = skyboxTexture;
+        scene.fog = new THREE.Fog(0x1a1a1a, 5, 15);
+
+        // --- Lights ---
+        scene.add(new THREE.AmbientLight(0x202020, 0.7));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+        dirLight.position.set(15, 15, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+        const pointLight1 = new THREE.PointLight(0xffd700, 0.7, 15);
+        pointLight1.position.set(0, 2.5, 2.5);
+        scene.add(pointLight1);
+        const pointLight2 = new THREE.PointLight(0x404040, 0.4, 10);
+        pointLight2.position.set(-2, 1.5, 3);
+        scene.add(pointLight2);
+
+        // --- Materials for Genie and environment ---
+        const genieMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x00aaff, emissive: 0x003366, emissiveIntensity: 0.6,
+            roughness: 0.08, metalness: 0.01, clearcoat: 0.98, clearcoatRoughness: 0.03,
+            reflectivity: 0.85, sheen: 0.2, sheenRoughness: 0.1, transparent: true, opacity: 0.97
+        });
+        const faceMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x00aaff, roughness: 0.18, metalness: 0, clearcoat: 0.8, sheen: 0.15
+        });
+        const accessoryMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffa500, emissive: 0xffa500, emissiveIntensity: 0.7,
+            roughness: 0.08, metalness: 0.95, clearcoat: 0.98
+        });
+        const jewelMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x00ffea, emissive: 0x00fff0, emissiveIntensity: 0.9, metalness: 1, roughness: 0.05, clearcoat: 1
+        });
+        const featherMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xfafafa, metalness: 0.1, roughness: 0.35, transparent: true, opacity: 0.6
+        });
+        const sashMaterial = new THREE.MeshPhysicalMaterial({ color: 0xff4040, roughness: 0.25, metalness: 0.15, clearcoat: 0.7 });
+        const clothMaterial = new THREE.MeshPhysicalMaterial({ color: 0x00aaff, roughness: 0.3, metalness: 0.05, clearcoat: 0.6, transparent: true, opacity: 0.9 });
+        const beltMaterial = new THREE.MeshPhysicalMaterial({ color: 0x8B4513, roughness: 0.2, metalness: 0.6, clearcoat: 0.85 });
+        const buckleMaterial = new THREE.MeshPhysicalMaterial({ color: 0xDAA520, roughness: 0.1, metalness: 0.9, clearcoat: 0.95 });
+        const bottleMaterial = new THREE.MeshPhysicalMaterial({ color: 0xd4af37, roughness: 0.15, metalness: 0.85, clearcoat: 0.95 });
+        const coinMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xFFD700,
+            roughness: 0.2,
+            metalness: 0.9,
+            clearcoat: 0.95,
+            transparent: true
+        });
+
+        // --- Body geometry (procedural genie shape) ---
+        const bodyGeometry = new THREE.BufferGeometry();
+        const vtx = [], idx = [];
+        const segments = 128, heightSegments = 32;
+        for (let i = 0; i <= heightSegments; i++) {
+            const v = i / heightSegments;
+            const y = 0.6 * (1 - v) + 0.2 * Math.sin(v * Math.PI) - v * 0.3;
+            const r = 0.3 + 0.4 * (1 - v) + 0.1 * Math.cos(v * Math.PI * 2);
+            for (let j = 0; j <= segments; j++) {
+                const u = j / segments * Math.PI * 2;
+                const x = r * Math.cos(u);
+                const z = r * Math.sin(u);
+                const displacement = 0.03 * Math.sin(u * 6) * Math.cos(v * 12);
+                vtx.push(x + displacement, y, z + displacement);
+            }
+        }
+        for (let i = 0; i < heightSegments; i++) {
+            for (let j = 0; j < segments; j++) {
+                const a = i * (segments + 1) + j;
+                const b = a + 1;
+                const c = (i + 1) * (segments + 1) + j;
+                const d = c + 1;
+                idx.push(a, b, d, a, d, c);
+            }
+        }
+        bodyGeometry.setIndex(idx);
+        bodyGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vtx, 3));
+        bodyGeometry.computeVertexNormals();
+
+        // --- Belt geometry ---
+        const beltGeometry = new THREE.BufferGeometry();
+        const beltVertices = [], beltIndices = [], beltSegments = 64;
+        for (let i = 0; i <= beltSegments; i++) {
+            const u = i / beltSegments * Math.PI * 2;
+            const x = 0.55 * Math.cos(u), z = 0.55 * Math.sin(u);
+            beltVertices.push(x, 0.2, z, x, 0.28, z);
+        }
+        for (let i = 0; i < beltSegments; i++) {
+            beltIndices.push(i * 2, i * 2 + 1, (i + 1) * 2, i * 2 + 1, (i + 1) * 2 + 1, (i + 1) * 2);
+        }
+        beltGeometry.setIndex(beltIndices);
+        beltGeometry.setAttribute('position', new THREE.Float32BufferAttribute(beltVertices, 3));
+        beltGeometry.computeVertexNormals();
+        const buckleGeometry = new THREE.BoxGeometry(0.2, 0.1, 0.02);
+        const buckle = new THREE.Mesh(buckleGeometry, buckleMaterial);
+        buckle.position.set(0, 0.24, 0.56);
+
+        // --- Other basic shapes ---
+        const headGeometry = new THREE.SphereGeometry(0.6, 64, 64);
+        const armGeometry = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 64);
+        const fingerGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.3, 16);
+        const eyeGeometry = new THREE.SphereGeometry(0.12, 32, 32);
+        const irisGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const browGeometry = new THREE.TorusGeometry(0.13, 0.03, 12, 32, Math.PI);
+        const noseGeometry = new THREE.ConeGeometry(0.08, 0.2, 32);
+        const cheekGeometry = new THREE.SphereGeometry(0.16, 24, 24);
+        const lipGeometry = new THREE.TorusGeometry(0.13, 0.015, 12, 28, Math.PI);
+        const mouthGeometry = new THREE.TorusGeometry(0.12, 0.02, 16, 32);
+        const beardGeometry = new THREE.ConeGeometry(0.09, 0.25, 20);
+        const turbanBaseGeometry = new THREE.TorusGeometry(0.7, 0.2, 32, 64);
+        const turbanTopGeometry = new THREE.ConeGeometry(0.4, 0.3, 32);
+        const turbanFoldGeometry = new THREE.TorusGeometry(0.65, 0.05, 16, 64);
+        const jewelGeometry = new THREE.SphereGeometry(0.07, 24, 24);
+        const featherGeometry = new THREE.PlaneGeometry(0.13, 0.45, 1, 8);
+        const earringGeometry = new THREE.TorusGeometry(0.05, 0.02, 16, 32);
+        const armBandGeometry = new THREE.TorusGeometry(0.18, 0.03, 16, 32);
+        const sashGeometry = new THREE.PlaneGeometry(0.6, 0.4);
+        const clothGeometry = new THREE.PlaneGeometry(0.8, 0.5);
+        const lampBaseGeometry = new THREE.SphereGeometry(0.35, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2);
+        const lampBodyGeometry = new THREE.CylinderGeometry(0.25, 0.35, 0.5, 32);
+        const lampSpoutGeometry = new THREE.CylinderGeometry(0.05, 0.08, 0.4, 32);
+        const lampHandleGeometry = new THREE.TorusGeometry(0.16, 0.03, 16, 32, Math.PI);
+        const coinGeometry = new THREE.CircleGeometry(0.1, 32);
+
+        // --- Genie parts (assembled) ---
+        const head = new THREE.Mesh(headGeometry, faceMaterial);
+        const body = new THREE.Mesh(bodyGeometry, genieMaterial);
+        const leftArm = new THREE.Mesh(armGeometry, genieMaterial);
+        const rightArm = new THREE.Mesh(armGeometry, genieMaterial);
+        const leftEye = new THREE.Mesh(eyeGeometry, new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0 }));
+        const rightEye = leftEye.clone();
+        const leftIris = new THREE.Mesh(irisGeometry, new THREE.MeshPhysicalMaterial({ color: 0x222273, roughness: 0.18 }));
+        const rightIris = leftIris.clone();
+        const leftBrow = new THREE.Mesh(browGeometry, new THREE.MeshPhysicalMaterial({ color: 0x0a2233, roughness: 0.13 }));
+        const rightBrow = leftBrow.clone();
+        const nose = new THREE.Mesh(noseGeometry, faceMaterial);
+        const leftCheek = new THREE.Mesh(cheekGeometry, new THREE.MeshPhysicalMaterial({ color: 0x19c2ff, roughness: 0.11, metalness: 0.1, clearcoat: 0.6 }));
+        const rightCheek = leftCheek.clone();
+        const lips = new THREE.Mesh(lipGeometry, new THREE.MeshPhysicalMaterial({ color: 0x7ebcf2, metalness: 0.2, roughness: 0.18 }));
+        const mouth = new THREE.Mesh(mouthGeometry, new THREE.MeshPhysicalMaterial({ color: 0x3057a1, metalness: 0.4, roughness: 0.19 }));
+        const beard = new THREE.Mesh(beardGeometry, new THREE.MeshPhysicalMaterial({ color: 0x19319a, metalness: 0.6, roughness: 0.34 }));
+        const turbanBase = new THREE.Mesh(turbanBaseGeometry, accessoryMaterial);
+        const turbanTop = new THREE.Mesh(turbanTopGeometry, accessoryMaterial);
+        const turbanFold1 = new THREE.Mesh(turbanFoldGeometry, accessoryMaterial);
+        const turbanFold2 = new THREE.Mesh(turbanFoldGeometry, accessoryMaterial);
+        const jewel = new THREE.Mesh(jewelGeometry, jewelMaterial);
+        const feather = new THREE.Mesh(featherGeometry, featherMaterial);
+        feather.geometry.translate(0, 0.25, 0);
+        const leftEarring = new THREE.Mesh(earringGeometry, jewelMaterial);
+        const rightEarring = new THREE.Mesh(earringGeometry, jewelMaterial);
+        const leftArmBand = new THREE.Mesh(armBandGeometry, accessoryMaterial);
+        const rightArmBand = new THREE.Mesh(armBandGeometry, accessoryMaterial);
+        const sash = new THREE.Mesh(sashGeometry, sashMaterial);
+        const chestCloth = new THREE.Mesh(clothGeometry, clothMaterial);
+        const belt = new THREE.Mesh(beltGeometry, beltMaterial);
+        belt.add(buckle);
+
+        // --- Position all features on the genie ---
+        head.position.set(0, 1.6, 0);
+        leftEye.position.set(-0.19, 1.73, 0.62);
+        rightEye.position.set(0.19, 1.73, 0.62);
+        leftIris.position.set(-0.19, 1.73, 0.73);
+        rightIris.position.set(0.19, 1.73, 0.73);
+        leftBrow.position.set(-0.19, 1.81, 0.60); leftBrow.rotation.z = Math.PI * 0.11;
+        rightBrow.position.set(0.19, 1.81, 0.60); rightBrow.rotation.z = -Math.PI * 0.11;
+        nose.position.set(0, 1.64, 0.73); nose.rotation.x = -Math.PI / 2;
+        leftCheek.position.set(-0.28, 1.6, 0.58); rightCheek.position.set(0.28, 1.6, 0.58);
+        lips.position.set(0, 1.49, 0.69); lips.rotation.x = -Math.PI / 2;
+        mouth.position.set(0, 1.45, 0.65);
+        beard.position.set(0, 1.25, 0.67); beard.rotation.x = Math.PI * 1.07;
+        turbanBase.position.set(0, 2.1, 0);
+        turbanTop.position.set(0, 2.35, 0);
+        turbanFold1.position.set(0, 2.0, 0); turbanFold1.rotation.y = Math.PI / 4;
+        turbanFold2.position.set(0, 1.9, 0); turbanFold2.rotation.y = -Math.PI / 4;
+        jewel.position.set(0, 2.24, 0.33);
+        feather.position.set(0.1, 2.47, 0.18); feather.rotation.x = -Math.PI / 5; feather.rotation.z = Math.PI / 9;
+        leftEarring.position.set(-0.35, 1.3, 0.3); leftEarring.rotation.x = Math.PI / 2;
+        rightEarring.position.set(0.35, 1.3, 0.3); rightEarring.rotation.x = Math.PI / 2;
+        body.position.set(0, 0.6, 0);
+        leftArm.position.set(-0.7, 1.2, 0); rightArm.position.set(0.7, 1.2, 0);
+        leftArm.rotation.z = Math.PI / 4; rightArm.rotation.z = -Math.PI / 4;
+        leftArmBand.position.set(-0.7, 1.2, 0); rightArmBand.position.set(0.7, 1.2, 0);
+        sash.position.set(0, 0.3, 0.1); sash.rotation.x = -Math.PI / 2;
+        chestCloth.position.set(0, 1.0, 0.1); chestCloth.rotation.x = -Math.PI / 6;
+        belt.position.set(0, 0.2, 0.1);
+
+        // --- Fingers (grouped) ---
+        const leftFingers = new THREE.Group(), rightFingers = new THREE.Group();
+        const leftThumb = new THREE.Mesh(fingerGeometry, genieMaterial);
+        leftThumb.position.set(-0.15, 0.1, 0.1); leftThumb.rotation.z = -Math.PI / 3;
+        const rightThumb = leftThumb.clone(); rightThumb.position.set(0.15, 0.1, 0.1); rightThumb.rotation.z = Math.PI / 3;
+        for (let i = 0; i < 4; i++) {
+            const finger = new THREE.Mesh(fingerGeometry, genieMaterial);
+            finger.position.x = -0.1 + i * 0.05;
+            finger.rotation.z = Math.PI / 8 * (i - 1.5);
+            leftFingers.add(finger.clone());
+            rightFingers.add(finger.clone());
+        }
+        leftFingers.add(leftThumb); rightFingers.add(rightThumb);
+        leftFingers.position.set(-0.7, 1.5, 0); rightFingers.position.set(0.7, 1.5, 0);
+
+        // --- Genie lamp ---
+        const lampBase = new THREE.Mesh(lampBaseGeometry, bottleMaterial);
+        const lampBody = new THREE.Mesh(lampBodyGeometry, bottleMaterial);
+        const lampSpout = new THREE.Mesh(lampSpoutGeometry, bottleMaterial);
+        const lampHandle = new THREE.Mesh(lampHandleGeometry, bottleMaterial);
+        lampBase.position.set(0, -0.85, 0);
+        lampBody.position.set(0, -0.6, 0);
+        lampSpout.position.set(0.35, -0.5, 0); lampSpout.rotation.z = Math.PI / 4;
+        lampHandle.position.set(-0.35, -0.5, 0); lampHandle.rotation.z = Math.PI / 2;
+        const lamp = new THREE.Group();
+        lamp.add(lampBase, lampBody, lampSpout, lampHandle);
+        lamp.position.set(0, -1, 0); lamp.rotation.y = Math.PI / 4;
+        scene.add(lamp);
+
+        // --- Smoke (particles rising from lamp) ---
+        const particleCount = 450;
+        const smokeParticlesGeometry = new THREE.BufferGeometry();
+        const smokePositions = new Float32Array(particleCount * 3);
+        const smokeOpacities = new Float32Array(particleCount);
+        const smokeSizes = new Float32Array(particleCount);
+        const smokeVelocities = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 0.6;
+            const height = Math.random() * -1.1 - 0.22 + 0.45;
+            smokePositions[i * 3] = Math.cos(angle) * radius;
+            smokePositions[i * 3 + 1] = height;
+            smokePositions[i * 3 + 2] = Math.sin(angle) * radius;
+            smokeOpacities[i] = Math.random() * 0.6 + 0.4;
+            smokeSizes[i] = Math.random() * 14 + 6;
+            smokeVelocities[i * 3] = (Math.random() - 0.5) * 0.03;
+            smokeVelocities[i * 3 + 1] = Math.random() * 0.06 + 0.03;
+            smokeVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.03;
+        }
+        smokeParticlesGeometry.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+        smokeParticlesGeometry.setAttribute('opacity', new THREE.BufferAttribute(smokeOpacities, 1));
+        smokeParticlesGeometry.setAttribute('size', new THREE.BufferAttribute(smokeSizes, 1));
+        const smokeShader = {
+            vertexShader: `
+                attribute float opacity;
+                attribute float size;
+                varying float vOpacity;
+                void main() {
+                    vOpacity = opacity;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = size;
+                }
+            `,
+            fragmentShader: `
+                varying float vOpacity;
+                void main() {
+                    float dist = length(gl_PointCoord - vec2(0.5, 0.5));
+                    if (dist > 0.5) discard;
+                    gl_FragColor = vec4(0.0, 0.3, 0.6, vOpacity * (1.0 - dist * 1.5));
+                }
+            `
+        };
+        const smokeMaterial = new THREE.ShaderMaterial({
+            vertexShader: smokeShader.vertexShader,
+            fragmentShader: smokeShader.fragmentShader,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const smokeLegs = new THREE.Points(smokeParticlesGeometry, smokeMaterial);
+        smokeLegs.position.set(0, -0.12, 0);
+
+        // --- Coin rain system (instanced for performance) ---
+        const coinCount = 150;
+        const coinMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, coinCount);
+        const coinData = [];
+        for (let i = 0; i < coinCount; i++) {
+            coinData.push({
+                position: [(Math.random() - 0.5) * window.innerWidth / 100, 5 + Math.random() * 3, (Math.random() - 0.5) * window.innerHeight / 100],
+                rotation: [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI],
+                velocity: [(Math.random() - 0.5) * 0.05, -0.1 - Math.random() * 0.05, (Math.random() - 0.5) * 0.05],
+                angularVelocity: [(Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1],
+                life: 0,
+                maxLife: 2.0
+            });
+        }
+        coinMesh.visible = false;
+        scene.add(coinMesh);
+
+        // --- Assemble genie and add to scene ---
+        const genie = new THREE.Group();
+        genie.add(
+            body, head, leftArm, rightArm,
+            leftEye, rightEye, leftIris, rightIris, leftBrow, rightBrow, nose,
+            leftCheek, rightCheek, lips, mouth, beard,
+            turbanBase, turbanTop, turbanFold1, turbanFold2, jewel, feather,
+            leftEarring, rightEarring, leftArmBand, rightArmBand, sash, chestCloth, belt,
+            smokeLegs, leftFingers, rightFingers
+        );
+        genie.traverse(child => { if (child.isMesh) child.castShadow = true; });
+        scene.add(genie);
+        genie.visible = false;
+
+        // --- Camera start position ---
+        camera.position.set(0, 1, 5);
+
+        // --- Mouse and animated custom cursor ---
+        let mouseX = 0, mouseY = 0;
+        const cursorDot = document.querySelector('.cursor-dot');
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            cursorDot.style.left = event.clientX + 'px';
+            cursorDot.style.top = event.clientY + 'px';
+        });
+
+        // --- Eyes follow your mouse ---
+        function updateEyes() {
+            const vector = new THREE.Vector3(mouseX, mouseY, 0.5);
+            vector.unproject(camera);
+            vector.sub(camera.position).normalize();
+            const eyeRadius = 0.12;
+            const maxOffset = 0.08;
+            const leftEyePos = new THREE.Vector3(-0.19, 1.73, 0.62);
+            const leftDir = vector.clone().multiplyScalar(maxOffset).add(leftEyePos);
+            leftIris.position.copy(leftDir).sub(leftEyePos).clampLength(0, maxOffset).add(leftEyePos);
+            leftIris.position.z = Math.max(0.73, leftIris.position.z);
+            const rightEyePos = new THREE.Vector3(0.19, 1.73, 0.62);
+            const rightDir = vector.clone().multiplyScalar(maxOffset).add(rightEyePos);
+            rightIris.position.copy(rightDir).sub(rightEyePos).clampLength(0, maxOffset).add(rightEyePos);
+            rightIris.position.z = Math.max(0.73, rightIris.position.z);
+        }
+
+        // --- Click: raise hand, rain coins, lower hand ---
+        let isHandRaised = false, rainActive = false, rainStartTime = 0;
+        document.addEventListener('click', () => {
+            if (emergenceProgress >= 1) {
+                isHandRaised = !isHandRaised;
+                if (isHandRaised) {
+                    rightArm.rotation.z = 0;
+                    rightArm.position.y += 0.5;
+                    rainActive = true;
+                    coinMesh.visible = true;
+                    rainStartTime = performance.now() / 1000;
+                    for (let i = 0; i < coinCount; i++) {
+                        coinData[i].position = [(Math.random() - 0.5) * window.innerWidth / 100, 5 + Math.random() * 3, (Math.random() - 0.5) * window.innerHeight / 100];
+                        coinData[i].rotation = [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI];
+                        coinData[i].velocity = [(Math.random() - 0.5) * 0.05, -0.1 - Math.random() * 0.05, (Math.random() - 0.5) * 0.05];
+                        coinData[i].angularVelocity = [(Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1];
+                        coinData[i].life = 0;
+                    }
+                } else {
+                    rightArm.rotation.z = -Math.PI / 4;
+                    rightArm.position.y -= 0.5;
+                    rainActive = false;
+                    setTimeout(() => { coinMesh.visible = false; }, 1800);
+                }
+            }
+        });
+
+        // --- Animation loop: genie appears, floats, breathes, everything moves ---
+        let emergenceProgress = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (emergenceProgress < 1) {
+                emergenceProgress += 0.012;
+                genie.visible = true;
+                genie.position.y = -1 + 2.6 * emergenceProgress;
+                genie.scale.set(0.1 + 0.9 * emergenceProgress, 0.1 + 0.9 * emergenceProgress, 0.1 + 0.9 * emergenceProgress);
+                if (emergenceProgress >= 1) {
+                    genie.position.y = 0.6;
+                    genie.scale.set(1, 1, 1);
+                }
+            } else {
+                genie.position.x += (mouseX * 3 - genie.position.x) * 0.05;
+                genie.position.y += (mouseY * 2 - genie.position.y + 1) * 0.05;
+                genie.position.y += Math.sin(Date.now() * 0.002) * 0.03;
+                genie.rotation.y = -mouseX * Math.PI * 0.3;
+                const time = Date.now() * 0.001;
+                const bodyPos = body.geometry.attributes.position.array;
+                for (let i = 0; i < bodyPos.length / 3; i++) {
+                    const y = bodyPos[i * 3 + 1];
+                    if (y > 0.5) bodyPos[i * 3 + 1] += 0.02 * Math.sin(time) * (1 - y);
+                }
+                body.geometry.attributes.position.needsUpdate = true;
+                body.geometry.computeVertexNormals();
+                leftArm.rotation.z = Math.PI / 4 + Math.sin(time * 2) * 0.1;
+                rightArm.rotation.z = isHandRaised ? 0 : (-Math.PI / 4 - Math.sin(time * 2) * 0.1);
+
+                // Smoke particles rise and reset when out of bounds
+                const positions = smokeLegs.geometry.attributes.position.array;
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] += smokeVelocities[i * 3];
+                    positions[i * 3 + 1] += smokeVelocities[i * 3 + 1];
+                    positions[i * 3 + 2] += smokeVelocities[i * 3 + 2];
+                    if (positions[i * 3 + 1] > 0.4) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const radius = Math.random() * 0.6;
+                        positions[i * 3] = Math.cos(angle) * radius;
+                        positions[i * 3 + 1] = -1.1;
+                        positions[i * 3 + 2] = Math.sin(angle) * radius;
+                    }
+                }
+                smokeLegs.geometry.attributes.position.needsUpdate = true;
+
+                // Coin rain: coins fall, spin, fade and reset in a loop
+                if (rainActive) {
+                    const currentTime = performance.now() / 1000;
+                    const elapsedTime = currentTime - rainStartTime;
+                    for (let i = 0; i < coinCount; i++) {
+                        const data = coinData[i];
+                        data.life = Math.min(data.life + 0.016, data.maxLife);
+                        data.position[0] += data.velocity[0];
+                        data.position[1] += data.velocity[1];
+                        data.position[2] += data.velocity[2];
+                        data.rotation[0] += data.angularVelocity[0];
+                        data.rotation[1] += data.angularVelocity[1];
+                        data.rotation[2] += data.angularVelocity[2];
+                        if (data.position[1] < -2) {
+                            data.position[1] = 5 + Math.random() * 3;
+                            data.position[0] = (Math.random() - 0.5) * window.innerWidth / 100;
+                            data.position[2] = (Math.random() - 0.5) * window.innerHeight / 100;
+                            data.velocity = [(Math.random() - 0.5) * 0.05, -0.1 - Math.random() * 0.05, (Math.random() - 0.5) * 0.05];
+                            data.angularVelocity = [(Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1];
+                            data.life = 0;
+                        }
+                        const opacity = 1 - (data.life / data.maxLife);
+                        coinMaterial.opacity = Math.max(opacity, 0);
+                        const m = new THREE.Matrix4();
+                        m.makeRotationFromEuler(new THREE.Euler(data.rotation[0], data.rotation[1], data.rotation[2]));
+                        m.setPosition(data.position[0], data.position[1], data.position[2]);
+                        coinMesh.setMatrixAt(i, m);
+                    }
+                    coinMesh.instanceMatrix.needsUpdate = true;
+                    if (elapsedTime >= 2.0) {
+                        rainActive = false;
+                        coinMesh.visible = false;
+                    }
+                }
+                updateEyes();
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- Responsive: always fit window ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
